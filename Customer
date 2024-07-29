@@ -1,0 +1,163 @@
+from tkinter import ttk
+import tkinter as tk
+import sqlite3
+
+def create_db():
+    con = sqlite3.connect('client.db')
+    cur = con.cursor()
+    cur.execute('''CREATE TABLE IF NOT EXISTS CUSTOMER (
+                    customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    customer_name TEXT NOT NULL,
+                    customer_address TEXT NOT NULL,
+                    payment_method TEXT NOT NULL
+                   )''')
+    con.commit()
+    con.close()
+
+create_db()
+
+class MyApp(tk.Tk):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.title("Customer Management System")
+        self.geometry("800x600")
+
+        main_frame = tk.Frame(self, bg='lightgreen')
+        main_frame.pack(pady=20, padx=20, fill=tk.BOTH, expand=True)
+
+        customer_frame = tk.Frame(main_frame, bg='lightgreen', bd=2, relief=tk.GROOVE)
+        customer_frame.pack(side=tk.LEFT, padx=20, pady=20, fill=tk.BOTH, expand=True)
+
+        customer_button = tk.Label(customer_frame, text="CUSTOMERS", font=("Arial", 24, 'bold'), fg='red', bg='lightgreen')
+        customer_button.pack(pady=10)
+
+        add_customer_button = tk.Button(customer_frame, text="Add Customer", font=("Arial", 14), command=self.toggle_add_customer_frame)
+        add_customer_button.pack(pady=10)
+
+        self.add_customer_frame = tk.Frame(customer_frame, bg='lightgreen')
+        self.add_customer_frame.pack(pady=20)
+
+        self.customer_name_var = tk.StringVar()
+        self.customer_address_var = tk.StringVar()
+        self.payment_method_var = tk.StringVar()
+
+        tk.Label(self.add_customer_frame, text="Customer Name", bg='lightgreen').grid(row=0, column=0, padx=10, pady=5)
+        tk.Entry(self.add_customer_frame, textvariable=self.customer_name_var).grid(row=0, column=1, padx=10, pady=5)
+
+        tk.Label(self.add_customer_frame, text="Customer Address", bg='lightgreen').grid(row=1, column=0, padx=10, pady=5)
+        tk.Entry(self.add_customer_frame, textvariable=self.customer_address_var).grid(row=1, column=1, padx=10, pady=5)
+
+        tk.Label(self.add_customer_frame, text="Payment Method", bg='lightgreen').grid(row=2, column=0, padx=10, pady=5)
+        tk.Entry(self.add_customer_frame, textvariable=self.payment_method_var).grid(row=2, column=1, padx=10, pady=5)
+
+        tk.Button(self.add_customer_frame, text="Add Customer", command=self.add_customer).grid(row=3, columnspan=2, pady=10)
+
+        delete_customer_button = tk.Button(customer_frame, text="Delete Customer", font=("Arial", 14), command=self.delete_customer)
+        delete_customer_button.pack(pady=10)
+
+        customer_columns = ("customer_id", "customer_name", "customer_address", "payment_method")
+
+        self.customer_table_frame = tk.Frame(customer_frame)
+        self.customer_table_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.customer_table = ttk.Treeview(self.customer_table_frame, columns=customer_columns, show='headings')
+
+        for col in customer_columns:
+            self.customer_table.heading(col, text=col)
+            self.customer_table.column(col, anchor=tk.CENTER, width=150)
+
+        self.customer_table.bind("<Double-1>", self.edit_cell)
+
+        customer_scrollbar_y = ttk.Scrollbar(self.customer_table_frame, orient=tk.VERTICAL, command=self.customer_table.yview)
+        customer_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.customer_table.config(yscroll=customer_scrollbar_y.set)
+
+        customer_scrollbar_x = ttk.Scrollbar(self.customer_table_frame, orient=tk.HORIZONTAL, command=self.customer_table.xview)
+        customer_scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.customer_table.config(xscroll=customer_scrollbar_x.set)
+
+        self.customer_table.pack(fill=tk.BOTH, expand=True)
+
+        self.load_customers()
+
+    def toggle_add_customer_frame(self):
+        if self.add_customer_frame.winfo_viewable():
+            self.add_customer_frame.pack_forget()
+        else:
+            self.add_customer_frame.pack(pady=20)
+
+    def add_customer(self):
+        customer_name = self.customer_name_var.get()
+        customer_address = self.customer_address_var.get()
+        payment_method = self.payment_method_var.get()
+
+        if all([customer_name, customer_address, payment_method]):
+            con = sqlite3.connect('client.db')
+            cur = con.cursor()
+            cur.execute('INSERT INTO CUSTOMER (customer_name, customer_address, payment_method) VALUES (?, ?, ?)', 
+                        (customer_name, customer_address, payment_method))
+            con.commit()
+            customer_id = cur.lastrowid
+            con.close()
+            
+            self.customer_table.insert('', 'end', values=(customer_id, customer_name, customer_address, payment_method))
+
+    def delete_customer(self):
+        selected_items = self.customer_table.selection()
+        con = sqlite3.connect('client.db')
+        cur = con.cursor()
+        for item in selected_items:
+            customer_id = self.customer_table.item(item, 'values')[0]
+            cur.execute('DELETE FROM CUSTOMER WHERE customer_id=?', (customer_id,))
+            self.customer_table.delete(item)
+        con.commit()
+        con.close()
+
+    def edit_cell(self, event):
+        item = self.customer_table.identify_row(event.y)
+        column = self.customer_table.identify_column(event.x)
+        column_index = int(column[1:]) - 1  # Convert from "#n" to 0-based index
+
+        if column_index == 0:
+            return  # Do not edit the ID column
+
+        x, y, width, height = self.customer_table.bbox(item, column)
+        entry = tk.Entry(self.customer_table_frame)
+        entry.place(x=x, y=y, width=width, height=height)
+        entry.focus()
+
+        value = self.customer_table.item(item, 'values')[column_index]
+        entry.insert(0, value)
+
+        def save_edit(event):
+            new_value = entry.get()
+            values = list(self.customer_table.item(item, 'values'))
+            values[column_index] = new_value
+            self.customer_table.item(item, values=values)
+            entry.destroy()
+
+            customer_id = values[0]
+            column_name = self.customer_table.heading(column, 'text')
+
+            con = sqlite3.connect('client.db')
+            cur = con.cursor()
+            cur.execute(f'UPDATE CUSTOMER SET {column_name}=? WHERE customer_id=?', (new_value, customer_id))
+            con.commit()
+            con.close()
+
+        entry.bind("<Return>", save_edit)
+        entry.bind("<FocusOut>", lambda event: entry.destroy())
+
+    def load_customers(self):
+        con = sqlite3.connect('client.db')
+        cur = con.cursor()
+        cur.execute('SELECT * FROM CUSTOMER')
+        rows = cur.fetchall()
+        for row in rows:
+            self.customer_table.insert('', 'end', values=row)
+        con.close()
+
+if __name__ == "__main__":
+    app = MyApp()
+    app.mainloop()
